@@ -79,6 +79,25 @@ func normalize(s string) string {
 	return s
 }
 
+func TestHelpAndNoArgs(t *testing.T) {
+	a := buildApp(t)
+	for _, args := range [][]string{{"help"}, {"--help"}, {"-h"}} {
+		r := a.run(t, "", args...)
+		if r.code != 0 {
+			t.Fatalf("kanban %v exited %d: %s", args, r.code, r.stderr)
+		}
+		for _, want := range []string{"tui", "repo", "new", "list", "show", "resume", "edit", "move", "comment", "start", "stop", "handoff", "KANBAN_HOME", "KANBAN_DB"} {
+			if !strings.Contains(r.stdout, want) {
+				t.Fatalf("kanban %v missing %q:\n%s", args, want, r.stdout)
+			}
+		}
+	}
+	noargs := a.run(t, "")
+	if noargs.code == 0 || !strings.Contains(noargs.stderr, "no command given") || !strings.Contains(noargs.stderr, "tui") {
+		t.Fatalf("expected usage error with command list: %#v", noargs)
+	}
+}
+
 func TestRepoRegistrationTracerBullet(t *testing.T) {
 	a := buildApp(t)
 	dir := t.TempDir()

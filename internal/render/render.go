@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"kanban/internal/store"
+	"github.com/oscarsjlh/agent-kanban/internal/store"
 )
 
 // Issue renders the full markdown view used by `kanban show` and the TUI

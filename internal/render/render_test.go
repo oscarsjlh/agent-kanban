@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"kanban/internal/store"
+	"github.com/oscarsjlh/agent-kanban/internal/store"
 )
 
 func TestCheckboxCounts(t *testing.T) {

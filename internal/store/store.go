@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"kanban/internal/domain"
+	"github.com/oscarsjlh/agent-kanban/internal/domain"
 	_ "modernc.org/sqlite"
 )
 

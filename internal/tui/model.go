@@ -11,9 +11,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"kanban/internal/domain"
-	"kanban/internal/render"
-	"kanban/internal/store"
+	"github.com/oscarsjlh/agent-kanban/internal/domain"
+	"github.com/oscarsjlh/agent-kanban/internal/render"
+	"github.com/oscarsjlh/agent-kanban/internal/store"
 )
 
 const pollInterval = 3 * time.Second

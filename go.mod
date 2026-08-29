@@ -1,4 +1,4 @@
-module kanban
+module github.com/oscarsjlh/agent-kanban
 
 go 1.24.2
 

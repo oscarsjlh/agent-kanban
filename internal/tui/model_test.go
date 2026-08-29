@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"kanban/internal/store"
+	"github.com/oscarsjlh/agent-kanban/internal/store"
 )
 
 // upd drives a key/msg through the model and returns the updated model.

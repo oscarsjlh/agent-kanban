@@ -12,10 +12,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"kanban/internal/domain"
-	"kanban/internal/render"
-	"kanban/internal/store"
-	"kanban/internal/tui"
+	"github.com/oscarsjlh/agent-kanban/internal/domain"
+	"github.com/oscarsjlh/agent-kanban/internal/render"
+	"github.com/oscarsjlh/agent-kanban/internal/store"
+	"github.com/oscarsjlh/agent-kanban/internal/tui"
 )
 
 func main() {
@@ -27,7 +27,12 @@ func main() {
 
 func run(args []string, out, errw io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kanban <command>\n\ncommands: tui, repo, new, list, show, move, edit, comment, start, stop, handoff, resume")
+		return fmt.Errorf("no command given\n\n%s", usageText)
+	}
+	switch args[0] {
+	case "help", "--help", "-h":
+		fmt.Fprint(out, usageText)
+		return nil
 	}
 	s, err := store.Open()
 	if err != nil {
@@ -63,6 +68,30 @@ func run(args []string, out, errw io.Writer) error {
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
 }
+
+const usageText = `kanban — issue tracker for agent workflows
+
+usage: kanban <command> [args]
+
+commands:
+  tui      interactive board UI
+  repo     register and list git repos (repo add|list)
+  new      create an issue (--title, --body-file|--body-stdin, --repo)
+  list     list issues (--column, --repo, --worker, --json, --all)
+  show     show an issue with its comments
+  resume   show resume context for an issue
+  edit     replace an issue body (--body-file)
+  move     move an issue to a column (--reason, --blocked-by)
+  comment  add a comment to an issue (--body-file)
+  start    claim an issue (--worker)
+  stop     release a claim (--worker, --note-file)
+  handoff  record a handoff note (--body-file, --worker)
+
+run a command with no or wrong arguments to see its usage.
+
+the board lives at ~/.kanban/kanban.db
+(override with KANBAN_HOME or KANBAN_DB)
+`
 
 func repoCmd(s *store.Store, args []string, out io.Writer) error {
 	if len(args) == 0 {

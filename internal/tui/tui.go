@@ -7,7 +7,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"kanban/internal/store"
+	"github.com/oscarsjlh/agent-kanban/internal/store"
 )
 
 // Run starts the TUI program on the given store and blocks until exit.
