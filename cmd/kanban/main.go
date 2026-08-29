@@ -265,6 +265,7 @@ func listCmd(s *store.Store, args []string, out io.Writer) error {
 			Column    string  `json:"column"`
 			Repo      *string `json:"repo"`
 			ClaimedBy *string `json:"claimed_by"`
+			BlockedBy *int64  `json:"blocked_by"`
 			CreatedAt string  `json:"created_at"`
 			UpdatedAt string  `json:"updated_at"`
 		}
@@ -279,7 +280,12 @@ func listCmd(s *store.Store, args []string, out io.Writer) error {
 			if w, ok := claimedBy[is.ID]; ok {
 				cb = &w
 			}
-			rows = append(rows, row{is.ID, is.Title, is.Column, r, cb, is.CreatedAt, is.UpdatedAt})
+			var bb *int64
+			if is.BlockedBy.Valid {
+				v := is.BlockedBy.Int64
+				bb = &v
+			}
+			rows = append(rows, row{is.ID, is.Title, is.Column, r, cb, bb, is.CreatedAt, is.UpdatedAt})
 		}
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
@@ -359,6 +365,7 @@ func moveCmd(s *store.Store, args []string, out io.Writer) error {
 	fs.SetOutput(io.Discard)
 	reason := fs.String("reason", "", "")
 	blocked := fs.Int64("blocked-by", 0, "")
+	unblocked := fs.Bool("unblocked", false, "")
 	if err := fs.Parse(flagsFirst(args, map[string]bool{"--reason": true, "--blocked-by": true})); err != nil {
 		return err
 	}
@@ -377,10 +384,14 @@ func moveCmd(s *store.Store, args []string, out io.Writer) error {
 	if *blocked != 0 {
 		bp = blocked
 	}
-	if err := s.Move(id, col, *reason, bp); err != nil {
+	promoted, err := s.Move(id, col, *reason, bp, *unblocked)
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "moved issue %d to %s\n", id, col)
+	for _, p := range promoted {
+		fmt.Fprintf(out, "unblocked issue %d -> Ready\n", p)
+	}
 	return nil
 }
 func commentCmd(s *store.Store, args []string, out io.Writer) error {

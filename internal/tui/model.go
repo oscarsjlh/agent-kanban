@@ -358,7 +358,7 @@ func (m *Model) submitInput(val string) tea.Cmd {
 			m.flash("waiting needs a reason")
 			break
 		}
-		if err := m.s.Move(id, domain.Waiting, val, nil); err != nil {
+		if _, err := m.s.Move(id, domain.Waiting, val, nil, false); err != nil {
 			m.flash(err.Error())
 		} else {
 			m.ok("moved to Waiting")
@@ -443,7 +443,7 @@ func (m *Model) onKeyMoveMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if dest == domain.Waiting {
 			return m.beginInput(inputReason, "waiting reason")
 		}
-		if err := m.s.Move(m.selectedID, dest, "", nil); err != nil {
+		if _, err := m.s.Move(m.selectedID, dest, "", nil, false); err != nil {
 			m.flash(err.Error())
 		} else {
 			m.ok("moved to " + dest)

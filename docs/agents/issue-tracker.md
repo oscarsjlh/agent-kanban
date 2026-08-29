@@ -57,6 +57,8 @@ kanban move <id> wontfix
 
 Waiting always needs `--reason` or `--blocked-by`. Terminal Issues (`done`, `wontfix`) are not moved again.
 
+Blockers persist across moves. When a blocker reaches `done`, its blocked Issues in Waiting auto-promote to Ready. Clear a blocker explicitly with `--unblocked`; moving to Ready while the blocker is open is rejected.
+
 ## Claim, handoff, and release
 
 Agents must pass a stable worker name on every claim, handoff, and release command:

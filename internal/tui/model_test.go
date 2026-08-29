@@ -37,7 +37,7 @@ func TestModelSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Move(id, "Ready", "", nil); err != nil {
+	if _, err := s.Move(id, "Ready", "", nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +78,7 @@ func TestModelSmoke(t *testing.T) {
 func TestMoveMenuLegalDests(t *testing.T) {
 	s := tempStore(t)
 	id, _ := s.CreateIssue("dests", "", "")
-	_ = s.Move(id, "Ready", "", nil)
+	_, _ = s.Move(id, "Ready", "", nil, false)
 	m := newModel(s)
 	m = upd(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = upd(m, tickMsg{})

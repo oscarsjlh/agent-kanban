@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/oscarsjlh/agent-kanban/internal/domain"
+
 	"github.com/oscarsjlh/agent-kanban/internal/store"
 )
 
@@ -60,7 +62,14 @@ func Resume(is store.Issue, notes []store.ResumeNote) string {
 	fmt.Fprintf(&b, "## Acceptance Criteria\n\nOpen: %d\nChecked: %d\n\n", open, checked)
 	b.WriteString("## Blocker State\n\n")
 	if is.BlockedBy.Valid {
-		fmt.Fprintf(&b, "Blocked by issue #%d.\n", is.BlockedBy.Int64)
+		switch {
+		case is.BlockerColumn.Valid && is.BlockerColumn.String == domain.Wontfix:
+			fmt.Fprintf(&b, "Blocker #%d was wontfixed \u2014 needs human decision.\n", is.BlockedBy.Int64)
+		case is.BlockerColumn.Valid:
+			fmt.Fprintf(&b, "Blocked by issue #%d (%s).\n", is.BlockedBy.Int64, is.BlockerColumn.String)
+		default:
+			fmt.Fprintf(&b, "Blocked by issue #%d.\n", is.BlockedBy.Int64)
+		}
 	} else if is.WaitingReason.Valid {
 		fmt.Fprintf(&b, "Waiting: %s\n", is.WaitingReason.String)
 	} else {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -489,5 +490,93 @@ func TestRepoRenameAndMove(t *testing.T) {
 	list = a.must(t, "", "repo", "list").stdout
 	if !strings.Contains(list, gitMoved) || !strings.Contains(list, "https://example.com/x.git") {
 		t.Fatalf("remote identity should survive move:\n%s", list)
+	}
+}
+
+func TestBlockerWiring(t *testing.T) {
+	a := buildApp(t)
+	bodies := t.TempDir()
+	type jissue struct {
+		ID        int64  `json:"id"`
+		Column    string `json:"column"`
+		BlockedBy *int64 `json:"blocked_by"`
+	}
+	board := func() map[int64]jissue {
+		t.Helper()
+		var payload struct {
+			Issues []jissue `json:"issues"`
+		}
+		if err := json.Unmarshal([]byte(a.must(t, "", "list", "--all", "--json").stdout), &payload); err != nil {
+			t.Fatal(err)
+		}
+		m := map[int64]jissue{}
+		for _, is := range payload.Issues {
+			m[is.ID] = is
+		}
+		return m
+	}
+	for i := 0; i < 8; i++ {
+		body := writeFile(t, bodies, fmt.Sprintf("body-%d.md", i), "Blocker test body.")
+		a.must(t, "", "new", "--title", fmt.Sprintf("blocker test %d", i), "--body-file", body)
+	}
+	bad := func(args []string, want string) {
+		t.Helper()
+		r := a.run(t, "", args...)
+		if r.code == 0 || !strings.Contains(r.stderr, want) {
+			t.Fatalf("kanban %v: want error containing %q, got %#v", args, want, r)
+		}
+	}
+
+	// set a blocker, then the Ready gate
+	a.must(t, "", "move", "2", "waiting", "--blocked-by", "1")
+	bad([]string{"move", "2", "ready"}, "blocked by issue 1")
+	a.must(t, "", "move", "2", "ready", "--unblocked")
+	if b := board()[2].BlockedBy; b != nil {
+		t.Fatalf("--unblocked did not clear blocker: %v", *b)
+	}
+
+	// persistence across moves
+	a.must(t, "", "move", "2", "waiting", "--blocked-by", "1")
+	a.must(t, "", "move", "2", "waiting", "--reason", "waiting on review")
+	if b := board()[2].BlockedBy; b == nil || *b != 1 {
+		t.Fatalf("blocked_by should persist across moves, got %v", b)
+	}
+
+	// set-time validations
+	bad([]string{"move", "1", "waiting", "--blocked-by", "1"}, "cannot block itself")
+	bad([]string{"move", "1", "waiting", "--blocked-by", "2"}, "cycle detected")
+	bad([]string{"move", "2", "waiting", "--blocked-by", "1", "--unblocked"}, "mutually exclusive")
+
+	// blocker done -> promotion with printed cascade
+	out := a.must(t, "", "move", "1", "done")
+	if !strings.Contains(out.stdout, "unblocked issue 2 -> Ready") {
+		t.Fatalf("cascade not printed:\n%s", out.stdout)
+	}
+	is2 := board()[2]
+	if is2.Column != "Ready" || is2.BlockedBy != nil {
+		t.Fatalf("promoted issue wrong: %+v", is2)
+	}
+	bad([]string{"move", "3", "waiting", "--blocked-by", "1"}, "already Done")
+
+	// wontfix blocker: allowed, gates Ready, flags for a human
+	a.must(t, "", "move", "4", "wontfix")
+	a.must(t, "", "move", "5", "waiting", "--blocked-by", "4")
+	bad([]string{"move", "5", "ready"}, "blocked by issue 4")
+	resume := a.must(t, "", "resume", "5").stdout
+	if !strings.Contains(resume, "wontfixed") || !strings.Contains(resume, "needs human decision") {
+		t.Fatalf("wontfix flag missing from resume:\n%s", resume)
+	}
+
+	// transitivity: 6 blocks 7, 7 blocks 8
+	a.must(t, "", "move", "7", "waiting", "--blocked-by", "6")
+	a.must(t, "", "move", "8", "waiting", "--blocked-by", "7")
+	a.must(t, "", "move", "6", "done")
+	b := board()
+	if b[7].Column != "Ready" || b[8].Column != "Waiting" {
+		t.Fatalf("promotion should only reach direct blocked issues: %+v / %+v", b[7], b[8])
+	}
+	a.must(t, "", "move", "7", "done")
+	if b = board(); b[8].Column != "Ready" || b[8].BlockedBy != nil {
+		t.Fatalf("transitive promotion failed: %+v", b[8])
 	}
 }

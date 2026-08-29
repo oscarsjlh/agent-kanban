@@ -28,6 +28,7 @@ type Issue struct {
 	RepoID               sql.NullInt64
 	WaitingReason        sql.NullString
 	BlockedBy            sql.NullInt64
+	BlockerColumn        sql.NullString
 	CreatedAt, UpdatedAt string
 }
 type Comment struct{ Author, Body, CreatedAt string }
@@ -248,7 +249,7 @@ func (s *Store) CreateIssue(title, body, repoName string) (int64, error) {
 	return id, nil
 }
 func (s *Store) Issues(column, repoName string, includeWontfix bool) ([]Issue, error) {
-	q := `SELECT i.id,i.title,i.body,i.column,i.repo_id,r.name,i.waiting_reason,i.blocked_by,i.created_at,i.updated_at FROM issues i LEFT JOIN repos r ON r.id=i.repo_id WHERE 1=1`
+	q := `SELECT i.id,i.title,i.body,i.column,i.repo_id,r.name,i.waiting_reason,i.blocked_by,blk.column,i.created_at,i.updated_at FROM issues i LEFT JOIN repos r ON r.id=i.repo_id LEFT JOIN issues blk ON blk.id=i.blocked_by WHERE 1=1`
 	var args []any
 	if column != "" {
 		q += ` AND i.column=?`
@@ -270,7 +271,7 @@ func (s *Store) Issues(column, repoName string, includeWontfix bool) ([]Issue, e
 	var out []Issue
 	for rows.Next() {
 		var is Issue
-		if err := rows.Scan(&is.ID, &is.Title, &is.Body, &is.Column, &is.RepoID, &is.RepoName, &is.WaitingReason, &is.BlockedBy, &is.CreatedAt, &is.UpdatedAt); err != nil {
+		if err := rows.Scan(&is.ID, &is.Title, &is.Body, &is.Column, &is.RepoID, &is.RepoName, &is.WaitingReason, &is.BlockedBy, &is.BlockerColumn, &is.CreatedAt, &is.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, is)
@@ -292,7 +293,7 @@ func (s *Store) EditBody(id int64, body string) error {
 // ClaimedBy returns all Issues with an active Claim by the named Worker,
 // regardless of column, oldest claim first.
 func (s *Store) ClaimedBy(worker, repoName string) ([]Issue, error) {
-	q := `SELECT i.id,i.title,i.body,i.column,i.repo_id,r.name,i.waiting_reason,i.blocked_by,i.created_at,i.updated_at FROM issues i JOIN claims c ON c.issue_id=i.id JOIN workers w ON w.id=c.worker_id LEFT JOIN repos r ON r.id=i.repo_id WHERE w.name=?`
+	q := `SELECT i.id,i.title,i.body,i.column,i.repo_id,r.name,i.waiting_reason,i.blocked_by,blk.column,i.created_at,i.updated_at FROM issues i JOIN claims c ON c.issue_id=i.id JOIN workers w ON w.id=c.worker_id LEFT JOIN repos r ON r.id=i.repo_id LEFT JOIN issues blk ON blk.id=i.blocked_by WHERE w.name=?`
 	args := []any{worker}
 	if repoName != "" {
 		q += ` AND r.name=?`
@@ -307,7 +308,7 @@ func (s *Store) ClaimedBy(worker, repoName string) ([]Issue, error) {
 	var out []Issue
 	for rows.Next() {
 		var is Issue
-		if err := rows.Scan(&is.ID, &is.Title, &is.Body, &is.Column, &is.RepoID, &is.RepoName, &is.WaitingReason, &is.BlockedBy, &is.CreatedAt, &is.UpdatedAt); err != nil {
+		if err := rows.Scan(&is.ID, &is.Title, &is.Body, &is.Column, &is.RepoID, &is.RepoName, &is.WaitingReason, &is.BlockedBy, &is.BlockerColumn, &is.CreatedAt, &is.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, is)
@@ -317,7 +318,7 @@ func (s *Store) ClaimedBy(worker, repoName string) ([]Issue, error) {
 
 func (s *Store) Issue(id int64) (Issue, error) {
 	var is Issue
-	err := s.DB.QueryRow(`SELECT i.id,i.title,i.body,i.column,i.repo_id,r.name,i.waiting_reason,i.blocked_by,i.created_at,i.updated_at FROM issues i LEFT JOIN repos r ON r.id=i.repo_id WHERE i.id=?`, id).Scan(&is.ID, &is.Title, &is.Body, &is.Column, &is.RepoID, &is.RepoName, &is.WaitingReason, &is.BlockedBy, &is.CreatedAt, &is.UpdatedAt)
+	err := s.DB.QueryRow(`SELECT i.id,i.title,i.body,i.column,i.repo_id,r.name,i.waiting_reason,i.blocked_by,blk.column,i.created_at,i.updated_at FROM issues i LEFT JOIN repos r ON r.id=i.repo_id LEFT JOIN issues blk ON blk.id=i.blocked_by WHERE i.id=?`, id).Scan(&is.ID, &is.Title, &is.Body, &is.Column, &is.RepoID, &is.RepoName, &is.WaitingReason, &is.BlockedBy, &is.BlockerColumn, &is.CreatedAt, &is.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return is, fmt.Errorf("unknown issue: %d", id)
 	}
@@ -356,25 +357,110 @@ func (s *Store) ResumeNotes(issueID int64) ([]ResumeNote, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) Move(id int64, to, reason string, blockedBy *int64) error {
+// Move changes an Issue's column. blocked_by is persistent: it survives
+// moves unless explicitly cleared with unblocked or consumed by promotion.
+// Moving a blocker to Done promotes its Waiting blocked Issues to Ready and
+// returns their IDs.
+func (s *Store) Move(id int64, to, reason string, blockedBy *int64, unblocked bool) ([]int64, error) {
+	if blockedBy != nil && unblocked {
+		return nil, fmt.Errorf("--blocked-by and --unblocked are mutually exclusive")
+	}
 	is, err := s.Issue(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	claimed, _ := s.claimer(id)
 	if err := domain.CanMove(is.Column, to, reason != "" || blockedBy != nil, claimed != ""); err != nil {
-		return err
+		return nil, err
+	}
+	newBlocked := is.BlockedBy
+	if unblocked {
+		newBlocked = sql.NullInt64{}
 	}
 	if blockedBy != nil {
-		if _, err := s.Issue(*blockedBy); err != nil {
-			return fmt.Errorf("unknown blocker: %d", *blockedBy)
+		if *blockedBy == id {
+			return nil, fmt.Errorf("issue %d cannot block itself", id)
+		}
+		b, err := s.Issue(*blockedBy)
+		if err != nil {
+			return nil, fmt.Errorf("unknown blocker: %d", *blockedBy)
+		}
+		if b.Column == domain.Done {
+			return nil, fmt.Errorf("blocker %d is already Done; nothing to wait for", *blockedBy)
+		}
+		if err := s.checkCycle(id, *blockedBy); err != nil {
+			return nil, err
+		}
+		newBlocked = sql.NullInt64{Int64: *blockedBy, Valid: true}
+	}
+	if to == domain.Ready && newBlocked.Valid && !unblocked {
+		b, err := s.Issue(newBlocked.Int64)
+		if err == nil && b.Column != domain.Done {
+			return nil, fmt.Errorf("issue %d is blocked by issue %d (%s); resolve the blocker or move with --unblocked", id, b.ID, b.Column)
+		}
+		newBlocked = sql.NullInt64{}
+	}
+	var bb any
+	if newBlocked.Valid {
+		bb = newBlocked.Int64
+	}
+	if _, err := s.DB.Exec(`UPDATE issues SET column=?, waiting_reason=?, blocked_by=?, updated_at=? WHERE id=?`, to, nullString(reason), bb, now(), id); err != nil {
+		return nil, err
+	}
+	if err := s.event(currentUser(), "issue.moved", id); err != nil {
+		return nil, err
+	}
+	if to == domain.Done {
+		return s.promoteBlocked(id)
+	}
+	return nil, nil
+}
+
+// checkCycle reports an error if making blockerID a Blocker of id would close
+// a cycle through existing blocker chains.
+func (s *Store) checkCycle(id, blockerID int64) error {
+	cur := blockerID
+	for i := 0; i < 1000; i++ {
+		if cur == id {
+			return fmt.Errorf("cycle detected: blocker %d is transitively blocked by issue %d", blockerID, id)
+		}
+		var next sql.NullInt64
+		if err := s.DB.QueryRow(`SELECT blocked_by FROM issues WHERE id=?`, cur).Scan(&next); err != nil || !next.Valid {
+			return nil
+		}
+		cur = next.Int64
+	}
+	return fmt.Errorf("blocker chain too long")
+}
+
+// promoteBlocked moves Issues blocked by a now-Done blocker from Waiting to
+// Ready, clearing their blocker state. Promotion is transitive by recursion
+// of normal workflow, not by this function: promoted Issues go to Ready,
+// and their own blocked Issues promote when they reach Done.
+func (s *Store) promoteBlocked(blockerID int64) ([]int64, error) {
+	rows, err := s.DB.Query(`SELECT id FROM issues WHERE blocked_by=? AND column=? ORDER BY id`, blockerID, domain.Waiting)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if _, err := s.DB.Exec(`UPDATE issues SET column=?, blocked_by=NULL, waiting_reason=NULL, updated_at=? WHERE id=?`, domain.Ready, now(), id); err != nil {
+			return nil, err
 		}
 	}
-	_, err = s.DB.Exec(`UPDATE issues SET column=?, waiting_reason=?, blocked_by=?, updated_at=? WHERE id=?`, to, nullString(reason), nullInt(blockedBy), now(), id)
-	if err == nil {
-		err = s.event(currentUser(), "issue.moved", id)
-	}
-	return err
+	return ids, nil
 }
 func nullString(s string) any {
 	if s == "" {

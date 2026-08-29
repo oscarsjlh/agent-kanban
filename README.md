@@ -8,7 +8,7 @@ A local-first, global kanban board for humans **and** autonomous AI agents. One 
 - **Claims with Worker identities**: at most one Worker may hold an Issue; a Worker may hold several. `kanban start <id> --worker W` claims, `kanban list --worker W` shows a Worker's open Claims.
 - **Resume Notes as cold-start briefings**: every handoff/stop appends a Resume Note — what was tried, what failed, next step. `kanban resume <id>` renders the latest state as a markdown briefing good enough to inject straight into a fresh agent session.
 - **Append-only Comments and events**: Comments hold discussion and decisions; an events table records every mutation (who, when, what) in place of git history.
-- **Blocker chains**: `kanban move <id> waiting --blocked-by <other-id>` links prerequisites; blockers chain transitively.
+- **Blocker chains**: `kanban move <id> waiting --blocked-by <other-id>` links prerequisites. Blockers persist across moves, cycles are rejected, and when a Blocker reaches `Done` its Waiting blocked Issues auto-promote to Ready (with the cascade printed). A wontfixed Blocker never unblocks — the blocked Issue is flagged for a human decision instead.
 - **Machine and human output**: `--json` on reads for programs, markdown rendering for people.
 - **TUI frontend**: `kanban tui` opens a Bubble Tea board view. It calls the same store/domain code in-process (ADR 0003), so the TUI and CLI can never disagree about what a legal move or Claim is. Agents stay on CLI subcommands.
 
@@ -98,7 +98,7 @@ kanban move 1 done
 | `kanban show <id>` | Render an Issue and its Comments |
 | `kanban resume <id>` | Cold-start briefing: Issue + latest Resume Notes |
 | `kanban edit <id> --body-file F` | Replace an Issue body |
-| `kanban move <id> <column> [--reason R] [--blocked-by ID]` | Move between columns; `waiting` needs `--reason` or `--blocked-by` |
+| `kanban move <id> <column> [--reason R] [--blocked-by ID] [--unblocked]` | Move between columns; `waiting` needs `--reason` or `--blocked-by`; `--unblocked` clears a persistent blocker |
 | `kanban comment <id> --body-file F` | Append a Comment |
 | `kanban start <id> --worker W` | Claim an Issue |
 | `kanban stop <id> --worker W [--note-file F]` | Release a Claim, appending a Resume Note |
