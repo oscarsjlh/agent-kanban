@@ -91,6 +91,8 @@ kanban move 1 done
 | `kanban tui` | Interactive board view (human frontend) |
 | `kanban repo add <path> [--name NAME]` | Register a Repo with the Board |
 | `kanban repo list` | List registered Repos |
+| `kanban repo rename <name> <new-name>` | Rename a Repo; hard error if the name is taken |
+| `kanban repo move <name> <new-path>` | Re-path a Repo; remote-URL identities are untouched, path identities follow the move |
 | `kanban new --title T (--body-file F \| --body-stdin) [--repo NAME]` | Create an Issue in Inbox |
 | `kanban list [--column C] [--repo NAME] [--worker W] [--all] [--json]` | List Issues or a Worker's Claims |
 | `kanban show <id>` | Render an Issue and its Comments |

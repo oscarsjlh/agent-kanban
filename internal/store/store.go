@@ -155,6 +155,49 @@ func (s *Store) AddRepo(identity, path, requestedName string) (Repo, error) {
 	id, _ := res.LastInsertId()
 	return Repo{ID: id, Name: name, Identity: identity, Path: path}, nil
 }
+func (s *Store) RepoByName(name string) (Repo, error) {
+	var r Repo
+	err := s.DB.QueryRow(`SELECT id,name,identity,path,created_at FROM repos WHERE name=?`, name).
+		Scan(&r.ID, &r.Name, &r.Identity, &r.Path, &r.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Repo{}, fmt.Errorf("repo not found: %s", name)
+	}
+	if err != nil {
+		return Repo{}, err
+	}
+	return r, nil
+}
+
+func (s *Store) RenameRepo(oldName, newName string) error {
+	r, err := s.RepoByName(oldName)
+	if err != nil {
+		return err
+	}
+	var taken int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM repos WHERE name=? AND id<>?`, newName, r.ID).Scan(&taken); err != nil {
+		return err
+	}
+	if taken > 0 {
+		return fmt.Errorf("repo name already taken: %s", newName)
+	}
+	_, err = s.DB.Exec(`UPDATE repos SET name=? WHERE id=?`, newName, r.ID)
+	return err
+}
+
+func (s *Store) MoveRepo(name, newPath, newIdentity string) error {
+	r, err := s.RepoByName(name)
+	if err != nil {
+		return err
+	}
+	if _, err := s.DB.Exec(`UPDATE repos SET path=?, identity=? WHERE id=?`, newPath, newIdentity, r.ID); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return fmt.Errorf("repo already registered: %s", newIdentity)
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *Store) uniqueRepoName(base string) string {
 	n := base
 	for i := 2; ; i++ {

@@ -410,3 +410,84 @@ func countWorkers(t *testing.T, dbpath, kind string) int {
 	}
 	return n
 }
+
+func TestRepoRenameAndMove(t *testing.T) {
+	a := buildApp(t)
+	dir := t.TempDir()
+	alpha := filepath.Join(dir, "alpha")
+	beta := filepath.Join(dir, "beta")
+	moved := filepath.Join(dir, "moved")
+	for _, p := range []string{alpha, beta, moved} {
+		if err := os.MkdirAll(p, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.must(t, "", "repo", "add", alpha, "--name", "alpha")
+	a.must(t, "", "repo", "add", beta, "--name", "beta")
+
+	// rename happy path
+	a.must(t, "", "repo", "rename", "alpha", "alphabet")
+	list := a.must(t, "", "repo", "list").stdout
+	if !strings.Contains(list, "alphabet") {
+		t.Fatalf("rename not reflected:\n%s", list)
+	}
+	for _, line := range strings.Split(list, "\n") {
+		if strings.HasPrefix(line, "alpha ") {
+			t.Fatalf("old name still listed:\n%s", list)
+		}
+	}
+
+	// rename collision and not-found are hard errors
+	dup := a.run(t, "", "repo", "rename", "alphabet", "beta")
+	if dup.code == 0 || !strings.Contains(dup.stderr, "name already taken") {
+		t.Fatalf("expected name-taken error, got %#v", dup)
+	}
+	nf := a.run(t, "", "repo", "rename", "nope", "x")
+	if nf.code == 0 || !strings.Contains(nf.stderr, "repo not found") {
+		t.Fatalf("expected not-found error, got %#v", nf)
+	}
+
+	// move happy path: plain dir has path identity, so identity follows the move
+	a.must(t, "", "repo", "move", "alphabet", moved)
+	list = a.must(t, "", "repo", "list").stdout
+	if !strings.Contains(list, moved) {
+		t.Fatalf("move not reflected:\n%s", list)
+	}
+
+	// move errors: missing path, not-found, identity collision
+	mp := a.run(t, "", "repo", "move", "beta", filepath.Join(dir, "does-not-exist"))
+	if mp.code == 0 || !strings.Contains(mp.stderr, "path does not exist") {
+		t.Fatalf("expected missing-path error, got %#v", mp)
+	}
+	nf = a.run(t, "", "repo", "move", "nope", beta)
+	if nf.code == 0 || !strings.Contains(nf.stderr, "repo not found") {
+		t.Fatalf("expected not-found error, got %#v", nf)
+	}
+	col := a.run(t, "", "repo", "move", "beta", moved)
+	if col.code == 0 || !strings.Contains(col.stderr, "repo already registered") {
+		t.Fatalf("expected identity collision error, got %#v", col)
+	}
+
+	// remote-URL identity is untouched by a move
+	gitRepo := filepath.Join(dir, "gitrepo")
+	gitMoved := filepath.Join(dir, "gitmoved")
+	for _, p := range []string{gitRepo, gitMoved} {
+		if err := os.MkdirAll(p, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{
+		{"-C", gitRepo, "init", "-q"},
+		{"-C", gitRepo, "remote", "add", "origin", "https://example.com/x.git"},
+	} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	a.must(t, "", "repo", "add", gitRepo, "--name", "gitrepo")
+	a.must(t, "", "repo", "move", "gitrepo", gitMoved)
+	list = a.must(t, "", "repo", "list").stdout
+	if !strings.Contains(list, gitMoved) || !strings.Contains(list, "https://example.com/x.git") {
+		t.Fatalf("remote identity should survive move:\n%s", list)
+	}
+}

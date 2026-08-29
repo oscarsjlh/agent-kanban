@@ -75,7 +75,7 @@ usage: kanban <command> [args]
 
 commands:
   tui      interactive board UI
-  repo     register and list git repos (repo add|list)
+  repo     register and manage git repos (repo add|list|rename|move)
   new      create an issue (--title, --body-file|--body-stdin, --repo)
   list     list issues (--column, --repo, --worker, --json, --all)
   show     show an issue with its comments
@@ -95,7 +95,7 @@ the board lives at ~/.kanban/kanban.db
 
 func repoCmd(s *store.Store, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: kanban repo <add|list>")
+		return fmt.Errorf("usage: kanban repo <add|list|rename|move>")
 	}
 	switch args[0] {
 	case "add":
@@ -134,6 +134,42 @@ func repoCmd(s *store.Store, args []string, out io.Writer) error {
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Name, r.Path, r.Identity)
 		}
 		return tw.Flush()
+	case "rename":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: kanban repo rename <name> <new-name>")
+		}
+		if err := s.RenameRepo(args[1], args[2]); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "renamed repo %s to %s\n", args[1], args[2])
+		return nil
+	case "move":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: kanban repo move <name> <new-path>")
+		}
+		r, err := s.RepoByName(args[1])
+		if err != nil {
+			return err
+		}
+		p, err := filepath.Abs(args[2])
+		if err != nil {
+			return err
+		}
+		if rp, err := filepath.EvalSymlinks(p); err == nil {
+			p = rp
+		}
+		if st, err := os.Stat(p); err != nil || !st.IsDir() {
+			return fmt.Errorf("path does not exist: %s", p)
+		}
+		ident := r.Identity
+		if r.Identity == r.Path {
+			ident = repoIdentity(p)
+		}
+		if err := s.MoveRepo(r.Name, p, ident); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "moved repo %s to %s\n", r.Name, p)
+		return nil
 	default:
 		return fmt.Errorf("unknown repo command: %s", args[0])
 	}

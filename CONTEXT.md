@@ -39,7 +39,7 @@ To forcibly take over a Stale Claim. The new Worker must acknowledge the previou
 _Avoid_: reassign, unlock
 
 **Repo**:
-A registered repository the Board knows about. Identified by its git remote URL (or repo root if no remote), with a resolvable local path. Issues may reference a Repo; repo-less Issues are legal.
+A registered repository the Board knows about. Identified by its git remote URL (or repo root if no remote), with a resolvable local path. Issues may reference a Repo; repo-less Issues are legal. Identity is stable; the display name and local path are editable.
 _Avoid_: project
 
 **Blocker**:
