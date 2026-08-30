@@ -30,6 +30,10 @@ _Avoid_: daemon, bot, auto-agent
 **Claim**:
 The association of exactly one active Worker with an Issue in progress. At most one Worker may hold an Issue; a Worker may hold several Issues.
 
+**Heartbeat**:
+A Worker's sign of life on a Claim, refreshed whenever they touch the claimed Issue and callable explicitly during long quiet stretches. Missed heartbeats make a Claim Stale.
+_Avoid_: ping, keepalive
+
 **Stale Claim**:
 A Claim whose Worker has missed heartbeats beyond the staleness threshold. The Issue stays In Progress but is flagged; nothing returns it to Ready automatically.
 _Avoid_: abandoned, orphaned
@@ -37,6 +41,10 @@ _Avoid_: abandoned, orphaned
 **Steal**:
 To forcibly take over a Stale Claim. The new Worker must acknowledge the previous Worker's state before proceeding.
 _Avoid_: reassign, unlock
+
+**Forecast**:
+A Worker's estimate of how long they will work without touching the Board. Extends the staleness deadline of their Claim; never shortens it.
+_Avoid_: ETA, estimate
 
 **Repo**:
 A registered repository the Board knows about. Identified by its git remote URL (or repo root if no remote), with a resolvable local path. Issues may reference a Repo; repo-less Issues are legal. Identity is stable; the display name and local path are editable.
